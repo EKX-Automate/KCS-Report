@@ -2439,10 +2439,11 @@ function computeStats() {
         votes, `→ resolved to "${bestMgr}"`);
     }
   }
-  // Apply manager to all cases. The fixed team composition takes priority;
-  // fall back to the masterlist majority-vote manager, then 'Unknown'.
+  // Apply manager to all cases using ONLY the fixed team composition, so the
+  // set of managers is exactly the one defined in TEAM_COMPOSITION. Any
+  // supervisor not listed there is grouped under 'Unknown'.
   for (const c of allCaseData) {
-    c.manager = resolveManagerForSup(c.supervisor) || supToMgr[c.supervisor] || 'Unknown';
+    c.manager = resolveManagerForSup(c.supervisor) || 'Unknown';
   }
 
   // Monthly stats — count unique case IDs per month
