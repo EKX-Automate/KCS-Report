@@ -1207,6 +1207,51 @@ function isEmailAuthorized() {
   return EMAIL_AUTHORIZED.some(a => name.includes(a) || user.includes(a.replace(/\s+/g, '.')));
 }
 
+// ── Fixed team composition: Manager → Supervisors ──
+// Authoritative mapping used to assign each supervisor to their manager,
+// overriding the masterlist's manager column. Supervisor names are matched
+// by fuzzy name comparison (exact / swap / first+last token-set).
+const TEAM_COMPOSITION = {
+  'Catherine Villamora': ['JP Moratillo', 'Benjamin Torres Jr', 'Jennie Lyn Calilung', 'Zhyren Buiza', 'Catherine Villamora'],
+  'Joana Fred Angeles': ['Edelina Ona', 'Paul Pelayo', 'Jon Adrian de Vera'],
+};
+
+// Pre-build a normalized supervisor → manager lookup list.
+const SUP_TO_MANAGER = [];
+for (const [mgr, sups] of Object.entries(TEAM_COMPOSITION)) {
+  for (const s of sups) {
+    const norm = normalizeName(s);
+    SUP_TO_MANAGER.push({ norm, tokens: nameTokens(norm), manager: mgr });
+  }
+}
+
+/** Resolve a supervisor name to its manager via the fixed team composition. */
+function resolveManagerForSup(supName) {
+  const norm = normalizeName(supName);
+  if (!norm) return null;
+  // 1. Exact
+  for (const e of SUP_TO_MANAGER) if (e.norm === norm) return e.manager;
+  const t = nameTokens(norm);
+  // 2. Two-part swap
+  if (t.length === 2) {
+    const sw = t[1] + ' ' + t[0];
+    for (const e of SUP_TO_MANAGER) if (e.norm === sw) return e.manager;
+  }
+  // 3. First+Last token-set (both must match)
+  if (t.length >= 2) {
+    const of = t[0], ol = t[t.length - 1], os = new Set(t);
+    for (const e of SUP_TO_MANAGER) {
+      if (e.tokens.length < 2) continue;
+      const es = new Set(e.tokens);
+      if ((es.has(of) && es.has(ol)) ||
+          (os.has(e.tokens[0]) && os.has(e.tokens[e.tokens.length - 1]))) {
+        return e.manager;
+      }
+    }
+  }
+  return null;
+}
+
 // Processed data
 let allCaseData = [];       // [{month, caseId, caseOwner, supervisor, manager, hasArticle}]
 let monthlyStats = [];      // [{month, totalClosed, withArticle, linkedRate}]
@@ -2394,9 +2439,10 @@ function computeStats() {
         votes, `→ resolved to "${bestMgr}"`);
     }
   }
-  // Apply normalized manager to all cases
+  // Apply manager to all cases. The fixed team composition takes priority;
+  // fall back to the masterlist majority-vote manager, then 'Unknown'.
   for (const c of allCaseData) {
-    c.manager = supToMgr[c.supervisor];
+    c.manager = resolveManagerForSup(c.supervisor) || supToMgr[c.supervisor] || 'Unknown';
   }
 
   // Monthly stats — count unique case IDs per month
