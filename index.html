@@ -2374,6 +2374,40 @@ function extractMonthFromName(name) {
 // ╚══════════════════════════════════════════════════════════════╝
 
 function computeStats() {
+  // ── Supervisor self-attribution ──
+  // A supervisor who also handles their own cases is listed in the masterlist
+  // under their OWN supervisor, so their personal cases would roll up to that
+  // supervisor instead. Re-attribute any case whose Case Owner is themselves a
+  // supervisor to their OWN team, so their linked rate counts under themselves.
+  const supCanon = {};
+  for (const c of allCaseData) {
+    if (c.supervisor && c.supervisor !== 'Unknown') {
+      supCanon[normalizeName(c.supervisor)] = c.supervisor;
+    }
+  }
+  const supEntries = Object.entries(supCanon).map(([norm, disp]) => ({ norm, disp, tokens: nameTokens(norm) }));
+  for (const c of allCaseData) {
+    const ownerNorm = normalizeName(c.caseOwner);
+    if (!ownerNorm) continue;
+    if (supCanon[ownerNorm]) { c.supervisor = supCanon[ownerNorm]; continue; }
+    const oTokens = nameTokens(ownerNorm);
+    if (oTokens.length === 2 && supCanon[oTokens[1] + ' ' + oTokens[0]]) {
+      c.supervisor = supCanon[oTokens[1] + ' ' + oTokens[0]]; continue;
+    }
+    if (oTokens.length >= 2) {
+      const oFirst = oTokens[0], oLast = oTokens[oTokens.length - 1];
+      const oSet = new Set(oTokens);
+      for (const s of supEntries) {
+        if (s.tokens.length < 2) continue;
+        const sSet = new Set(s.tokens);
+        if ((sSet.has(oFirst) && sSet.has(oLast)) ||
+            (oSet.has(s.tokens[0]) && oSet.has(s.tokens[s.tokens.length - 1]))) {
+          c.supervisor = s.disp; break;
+        }
+      }
+    }
+  }
+
   // ── Normalize supervisor → manager mapping ──
   // Some agents under the same supervisor may have different Manager Section
   // values in the masterlist. Resolve each supervisor to a single manager
