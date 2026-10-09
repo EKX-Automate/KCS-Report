@@ -1134,7 +1134,7 @@
         <button class="btn-primary" onclick="loadAllData()">Refresh Data</button>
       </div>
 
-      <div id="masterDiagCard" class="card" style="margin-top:16px; display:none;">
+      <div id="masterDiagCard" class="card" style="margin-top:16px;">
         <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
           <span>Masterlist Lookup Diagnostics</span>
           <span>
@@ -1147,7 +1147,7 @@
           Supervisor Roster and Unmatched Case Owners lists below reveal why. Use
           <strong>Download Diagnostics</strong> to export the full report.
         </p>
-        <div id="masterDiagContent"></div>
+        <div id="masterDiagContent"><p style="font-size:13px; color:var(--sap-medium-gray);">Load data (log in or click Refresh Data) to populate diagnostics.</p></div>
       </div>
     </div>
 
@@ -1940,6 +1940,10 @@ async function loadAllData() {
       console.warn(`[Masterlist] ${unmatchedOwners.size} case owners not found in Masterlist:`, [...unmatchedOwners].slice(0, 30));
     }
 
+    // Render diagnostics EARLY and defensively so the card always populates,
+    // even if a later rendering step throws.
+    try { renderMasterDiag(masterDiag); } catch (e) { console.error('renderMasterDiag failed:', e); }
+
     // ── Diagnostics: article matching per month ──
     const closedMonths = new Set(Object.keys(closedDataMap));
     const articleMonths = new Set(Object.keys(articleByMonth));
@@ -1958,7 +1962,7 @@ async function loadAllData() {
 
     computeStats();
     renderAll();
-    renderMasterDiag(masterDiag);
+    try { renderMasterDiag(masterDiag); } catch (e) { console.error('renderMasterDiag failed:', e); }
     setStep(6, 'done');
 
     // Update data source details
@@ -1970,6 +1974,8 @@ async function loadAllData() {
     showLoading(false);
     console.error('Load error:', err);
     showToast('Error loading data: ' + err.message);
+    // Still surface whatever diagnostics we have so the user can debug/export.
+    try { if (typeof masterDiag !== 'undefined') renderMasterDiag(masterDiag); } catch (e) { /* ignore */ }
   }
 }
 
