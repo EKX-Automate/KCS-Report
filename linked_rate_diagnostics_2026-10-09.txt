@@ -1,0 +1,126 @@
+LINKED RATE PORTAL — MASTERLIST DIAGNOSTICS
+Generated: 2026-10-09T18:52:04.101Z
+============================================================
+
+Load strategy: A: Direct list items
+Masterlist rows loaded: 92
+Distinct agents parsed: 92
+
+RESOLVED COLUMN MAPPING
+------------------------------------------------------------
+Employee Name: LinkTitle  | sample: undefined
+Full Name: field_1  | sample: undefined
+Supervisor: field_2  | sample: undefined
+Manager Section: field_3  | sample: undefined
+
+SUPERVISOR ROSTER (from masterlist)
+------------------------------------------------------------
+1. Edelina Ona — 15 agents
+2. JP Moratillo — 11 agents
+3. Jennie Lyn Calilung — 10 agents
+4. Jon Adrian de Vera — 10 agents
+5. Paul Pelayo — 10 agents
+6. Benjamin Torres Jr — 9 agents
+7. Zhyren Buiza — 9 agents
+8. Catherine Villamora — 9 agents
+9. Joana Fred Angeles — 4 agents
+10. Romina Gonzales — 3 agents
+11. Angel Siao — 1 agents
+12. Thomas Olsen — 1 agents
+
+SAMPLE PARSED AGENTS (first 40)
+------------------------------------------------------------
+1. "Harris Abdulaup" | sup="Benjamin Torres Jr" | mgr="Catherine Villamora"
+2. "Michael Acosta" | sup="Edelina Ona" | mgr="Joana Fred Angeles"
+3. "RJ Adriano" | sup="Jennie Lyn Calilung" | mgr="Catherine Villamora"
+4. "Jason Advincula" | sup="JP Moratillo" | mgr="Catherine Villamora"
+5. "Kim Alagar" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+6. "Jean Angeles" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+7. "Joana Fred Angeles" | sup="Romina Gonzales" | mgr="Angel Siao"
+8. "Ulysses Avestruz" | sup="JP Moratillo" | mgr="Catherine Villamora"
+9. "Sharmaine Bagacina" | sup="Benjamin Torres Jr" | mgr="Catherine Villamora"
+10. "Hendry Bajen" | sup="Zhyren Buiza" | mgr="Catherine Villamora"
+11. "Lea Balita" | sup="Romina Gonzales" | mgr="Angel Siao"
+12. "Janine Kaye Gavilo" | sup="Jennie Lyn Calilung" | mgr="Catherine Villamora"
+13. "John Belderol" | sup="Edelina Ona" | mgr="Joana Fred Angeles"
+14. "Steph Bergonia" | sup="Benjamin Torres Jr" | mgr="Catherine Villamora"
+15. "Jorilyn Biso" | sup="Edelina Ona" | mgr="Joana Fred Angeles"
+16. "Rendon Bitara" | sup="JP Moratillo" | mgr="Catherine Villamora"
+17. "Ley Borbon" | sup="JP Moratillo" | mgr="Catherine Villamora"
+18. "John Patrick Buenaventura" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+19. "Zhyren Buiza" | sup="Catherine Villamora" | mgr="Romina Gonzales"
+20. "Mynard Buletche" | sup="Zhyren Buiza" | mgr="Catherine Villamora"
+21. "Joselino Capulong" | sup="Catherine Villamora" | mgr="Romina Gonzales"
+22. "Jhoe Caracas" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+23. "Ariane May Casora" | sup="Paul Pelayo" | mgr="Joana Fred Angeles"
+24. "Louie Catacutan" | sup="Benjamin Torres Jr" | mgr="Catherine Villamora"
+25. "Cassandra Choy" | sup="Catherine Villamora" | mgr="Romina Gonzales"
+26. "Jed Marc Zeus Cristobal" | sup="Edelina Ona" | mgr="Joana Fred Angeles"
+27. "Alcon Paul Datu" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+28. "Jon Adrian de Vera" | sup="Joana Fred Angeles" | mgr="Romina Gonzales"
+29. "Liz De Vera" | sup="Paul Pelayo" | mgr="Joana Fred Angeles"
+30. "Janette DelRosario" | sup="Jennie Lyn Calilung" | mgr="Catherine Villamora"
+31. "Albert Dela Cruz" | sup="JP Moratillo" | mgr="Catherine Villamora"
+32. "Jomer Dela Cruz" | sup="Jon Adrian de Vera" | mgr="Joana Fred Angeles"
+33. "Roxanne Demdam" | sup="Paul Pelayo" | mgr="Joana Fred Angeles"
+34. "Dezhneva Demicais" | sup="JP Moratillo" | mgr="Catherine Villamora"
+35. "Lilibeth Diño" | sup="Joana Fred Angeles" | mgr="Romina Gonzales"
+36. "Rafael Doton" | sup="Zhyren Buiza" | mgr="Catherine Villamora"
+37. "Rosemary Dumdum" | sup="Catherine Villamora" | mgr="Romina Gonzales"
+38. "Angeline Esperida" | sup="Edelina Ona" | mgr="Joana Fred Angeles"
+39. "Romelyn Feliciano" | sup="Paul Pelayo" | mgr="Joana Fred Angeles"
+40. "Armichael Fermil" | sup="Jennie Lyn Calilung" | mgr="Catherine Villamora"
+
+UNMATCHED CASE OWNERS (48)
+------------------------------------------------------------
+1. Akram Ali Tadimari Shaik
+2. Amy Wang
+3. Anu R
+4. Brandon Wendorff
+5. Chris Espinoza
+6. Dan Bushell
+7. Deepak Shreshtha
+8. Diego Mathys
+9. Francisco Ang
+10. Gay Magsisi
+11. Grazie Ogoc
+12. Heather Jenkins
+13. Hemanth D.S.
+14. Interface - Credit Card Services
+15. Jay Santos
+16. Jennie Lyn Lim
+17. Jerold Zaldivar
+18. Jin Malicdem
+19. Joel Hugo Jr.
+20. Julia Ermochenko
+21. Kadosa Jenei
+22. Karen Baylon
+23. Katherine Teague
+24. Kelly Liu
+25. Kurtiss Childs
+26. Leanne Gregory
+27. Leslie Wong
+28. Lori Ann Esguerra
+29. MD Arshad Tandur
+30. Ma Krystel Lorraine De los Santos
+31. Madan Kumar
+32. Manjunath S2
+33. Mohan Babu C
+34. Philip Breese
+35. Renata Moreira
+36. Renz Gravador
+37. Sandee Waine
+38. Sheramyanne Arganoza
+39. Shruthi B
+40. Shuwei Jiang
+41. Surriya S
+42. Syed Tajammul Shafi
+43. TRV - GDS Shop & Book
+44. User Support Desk
+45. Vidar Arntsen
+46. Vinoth Kumar
+47. Yuri Bento
+48. Yvanna Gonzales
+
+RAW FIELD KEYS (first item): @odata.etag, Title, LinkTitle, field_1, field_2, field_3, field_4, field_5, field_6, field_7, field_8, field_9, field_10, id, ContentType, Modified, Created, AuthorLookupId, EditorLookupId, _UIVersionString, Attachments, Edit, LinkTitleNoMenu, ItemChildCount, FolderChildCount, _ComplianceFlags, _ComplianceTag, _ComplianceTagWrittenTime, _ComplianceTagUserId
+ERRORS: 
