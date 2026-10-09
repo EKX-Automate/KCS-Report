@@ -740,20 +740,22 @@
   }
   .pivot-table .pv-mgr-row td {
     font-weight: 700;
-    font-size: 14px;
-    color: var(--sap-white);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--sap-deep-navy);
     padding: 12px 14px;
-    background: var(--sap-deep-navy);
-    border-bottom: 1px solid #0a1e3d;
+    background: #e9edf2;
+    border-bottom: 1px solid #d0d6de;
   }
   .pivot-table .pv-mgr-row .pv-toggle { color: rgba(255,255,255,0.6); }
   .pivot-table .pv-mgr-metric td {
     font-size: 13px;
     font-weight: 600;
     padding: 6px 14px 6px 32px;
-    background: #eef2f7;
+    background: #ffffff;
     color: var(--sap-deep-navy);
-    border-bottom: 1px solid #d6dce5;
+    border-bottom: 1px solid #eef1f4;
   }
   .pivot-table .pv-mgr-metric td.num {
     text-align: right;
@@ -765,18 +767,18 @@
   .pivot-table .pv-sup-row td {
     font-weight: 700;
     font-size: 13px;
-    color: var(--sap-deep-navy);
+    color: var(--sap-blue, #0070F2);
     padding: 10px 14px 10px 28px;
-    background: var(--sap-light-gray);
-    border-bottom: 1px solid #d0d2d6;
+    background: #ffffff;
+    border-bottom: 1px solid #eef1f4;
   }
   .pivot-table .pv-sup-metric td {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     padding: 6px 14px 6px 48px;
-    background: #f0f3f0;
+    background: #ffffff;
     color: var(--sap-deep-navy);
-    border-bottom: 1px solid #dce0dc;
+    border-bottom: 1px solid #eef1f4;
   }
   .pivot-table .pv-sup-metric td.num {
     text-align: right;
@@ -3708,15 +3710,15 @@ function exportSummaryCSV() {
   const { cases: monthCases, title } = getSummaryCaseSubset();
   if (monthCases.length === 0) return;
 
-  // Group: supervisor → agent (mirrors buildPivotTableHTML, no manager layer)
-  const bySup = {};
+  // Group: manager → supervisor (mirrors buildPivotTableHTML, no agent detail)
+  const byMgr = {};
   for (const c of monthCases) {
+    const mgr = c.manager || 'Unknown';
     const sup = c.supervisor || 'Unknown';
-    if (!bySup[sup]) bySup[sup] = {};
-    const ag = c.caseOwner;
-    if (!bySup[sup][ag]) bySup[sup][ag] = { closed: new Set(), linked: new Set() };
-    bySup[sup][ag].closed.add(c.caseId);
-    if (c.hasArticle) bySup[sup][ag].linked.add(c.caseId);
+    if (!byMgr[mgr]) byMgr[mgr] = {};
+    if (!byMgr[mgr][sup]) byMgr[mgr][sup] = { closed: new Set(), linked: new Set() };
+    byMgr[mgr][sup].closed.add(c.caseId);
+    if (c.hasArticle) byMgr[mgr][sup].linked.add(c.caseId);
   }
 
   const overallClosed = new Set();
@@ -3732,30 +3734,28 @@ function exportSummaryCSV() {
   // Pivot-table format: 2 columns (Label, Value) mirroring the on-screen hierarchy
   const rows = [['Label', 'Value']];
 
-  for (const sup of Object.keys(bySup).sort()) {
-    const supClosed = new Set(), supLinked = new Set();
-    const agentNames = Object.keys(bySup[sup]).sort();
-    for (const ag of agentNames) {
-      for (const id of bySup[sup][ag].closed) supClosed.add(id);
-      for (const id of bySup[sup][ag].linked) supLinked.add(id);
+  for (const mgr of Object.keys(byMgr).sort()) {
+    const mgrClosed = new Set(), mgrLinked = new Set();
+    const supNames = Object.keys(byMgr[mgr]).sort();
+    for (const sup of supNames) {
+      for (const id of byMgr[mgr][sup].closed) mgrClosed.add(id);
+      for (const id of byMgr[mgr][sup].linked) mgrLinked.add(id);
     }
 
-    // Supervisor header
-    rows.push([csvQ(sup), '']);
-    // Supervisor summary metrics
-    rows.push([csvQ('  Total Closed Cases'), supClosed.size]);
-    rows.push([csvQ('  Total Cases with Article'), supLinked.size]);
-    rows.push([csvQ('  Overall Linked Rate'), pct(supLinked.size, supClosed.size)]);
+    // Manager header + metrics
+    rows.push([csvQ(mgr), '']);
+    rows.push([csvQ('  Total Closed Cases'), mgrClosed.size]);
+    rows.push([csvQ('  Total Cases with Article'), mgrLinked.size]);
+    rows.push([csvQ('  Overall Linked Rate'), pct(mgrLinked.size, mgrClosed.size)]);
 
-    // Agent detail rows
-    for (const ag of agentNames) {
-      const a = bySup[sup][ag];
-      const agRate = a.closed.size > 0 ? (a.linked.size / a.closed.size * 100) : 0;
-
-      rows.push([csvQ('    ' + ag), '']);
-      rows.push([csvQ('      Sum of Case Closed'), a.closed.size]);
-      rows.push([csvQ('      Sum of with Article'), a.linked.size]);
-      rows.push([csvQ('      Sum of Link Rate'), agRate.toFixed(2) + '%']);
+    // Supervisor rows + metrics
+    for (const sup of supNames) {
+      const supClosed = byMgr[mgr][sup].closed;
+      const supLinked = byMgr[mgr][sup].linked;
+      rows.push([csvQ('  ' + sup), '']);
+      rows.push([csvQ('    Total Closed Cases'), supClosed.size]);
+      rows.push([csvQ('    Total Cases with Article'), supLinked.size]);
+      rows.push([csvQ('    Overall Linked Rate'), pct(supLinked.size, supClosed.size)]);
     }
   }
 
@@ -3781,15 +3781,15 @@ function buildPivotTableHTML(caseSubset) {
     return '<tr><td colspan="2" style="text-align:center; color:var(--sap-medium-gray); padding:24px;">No data available for the selected period.</td></tr>';
   }
 
-  // ── Group: supervisor → agent (no manager layer) ──
-  const bySup = {};
+  // ── Group: manager → supervisor (two levels, no agent detail) ──
+  const byMgr = {};
   for (const c of caseSubset) {
+    const mgr = c.manager || 'Unknown';
     const sup = c.supervisor || 'Unknown';
-    if (!bySup[sup]) bySup[sup] = {};
-    const ag = c.caseOwner;
-    if (!bySup[sup][ag]) bySup[sup][ag] = { closed: new Set(), linked: new Set() };
-    bySup[sup][ag].closed.add(c.caseId);
-    if (c.hasArticle) bySup[sup][ag].linked.add(c.caseId);
+    if (!byMgr[mgr]) byMgr[mgr] = {};
+    if (!byMgr[mgr][sup]) byMgr[mgr][sup] = { closed: new Set(), linked: new Set() };
+    byMgr[mgr][sup].closed.add(c.caseId);
+    if (c.hasArticle) byMgr[mgr][sup].linked.add(c.caseId);
   }
 
   // Overall totals
@@ -3800,64 +3800,36 @@ function buildPivotTableHTML(caseSubset) {
     if (c.hasArticle) overallLinked.add(c.caseId);
   }
 
-  const supNames = Object.keys(bySup).sort();
+  const mgrNames = Object.keys(byMgr).sort();
   let html = '';
-  let gid = 0;
 
-  for (const sup of supNames) {
-    const supId = 'pvSup' + (gid++);
-
-    // Supervisor totals
-    const supClosed = new Set();
-    const supLinked = new Set();
-    const agentNames = Object.keys(bySup[sup]).sort();
-    for (const ag of agentNames) {
-      for (const id of bySup[sup][ag].closed) supClosed.add(id);
-      for (const id of bySup[sup][ag].linked) supLinked.add(id);
+  for (const mgr of mgrNames) {
+    // Manager totals (dedup across its supervisors)
+    const mgrClosed = new Set();
+    const mgrLinked = new Set();
+    const supNames = Object.keys(byMgr[mgr]).sort();
+    for (const sup of supNames) {
+      for (const id of byMgr[mgr][sup].closed) mgrClosed.add(id);
+      for (const id of byMgr[mgr][sup].linked) mgrLinked.add(id);
     }
-    const supRate = supClosed.size > 0 ? (supLinked.size / supClosed.size * 100) : 0;
+    const mgrRate = mgrClosed.size > 0 ? (mgrLinked.size / mgrClosed.size * 100) : 0;
 
-    // Supervisor header row (click to drill into agents)
-    html += `<tr class="pv-sup-row" onclick="toggleSupDetail('${supId}')">
-      <td><span class="pv-toggle" id="${supId}Tog">\u229E</span>${esc(sup)}</td>
-      <td class="num"></td>
-    </tr>`;
+    // Manager header + metrics
+    html += `<tr class="pv-mgr-row"><td>${esc(mgr)}</td><td class="num"></td></tr>`;
+    html += `<tr class="pv-mgr-metric"><td>Total Closed Cases</td><td class="num">${mgrClosed.size.toLocaleString()}</td></tr>`;
+    html += `<tr class="pv-mgr-metric"><td>Total Cases with Article</td><td class="num">${mgrLinked.size.toLocaleString()}</td></tr>`;
+    html += `<tr class="pv-mgr-metric"><td>Overall Linked Rate</td><td class="num">${lrBadge(mgrRate)}</td></tr>`;
 
-    // Supervisor summary metrics (visible by default)
-    html += `<tr class="pv-sup-metric ${supId}-sum">
-      <td>Total Closed Cases</td>
-      <td class="num">${supClosed.size.toLocaleString()}</td>
-    </tr>`;
-    html += `<tr class="pv-sup-metric ${supId}-sum">
-      <td>Total Cases with Article</td>
-      <td class="num">${supLinked.size.toLocaleString()}</td>
-    </tr>`;
-    html += `<tr class="pv-sup-metric ${supId}-sum">
-      <td>Overall Linked Rate</td>
-      <td class="num">${lrBadge(supRate)}</td>
-    </tr>`;
+    // Supervisor rows + metrics (no agent detail)
+    for (const sup of supNames) {
+      const supClosed = byMgr[mgr][sup].closed;
+      const supLinked = byMgr[mgr][sup].linked;
+      const supRate = supClosed.size > 0 ? (supLinked.size / supClosed.size * 100) : 0;
 
-    // Agent detail rows (hidden by default, shown when supervisor is drilled)
-    for (const ag of agentNames) {
-      const a = bySup[sup][ag];
-      const agRate = a.closed.size > 0 ? (a.linked.size / a.closed.size * 100) : 0;
-
-      html += `<tr class="pv-agent-row ${supId}-det" style="display:none">
-        <td>${esc(ag)}</td>
-        <td class="num"></td>
-      </tr>`;
-      html += `<tr class="pv-metric-row ${supId}-det" style="display:none">
-        <td>Sum of Case Closed</td>
-        <td class="num">${a.closed.size.toLocaleString()}</td>
-      </tr>`;
-      html += `<tr class="pv-metric-row ${supId}-det" style="display:none">
-        <td>Sum of with Article</td>
-        <td class="num">${a.linked.size.toLocaleString()}</td>
-      </tr>`;
-      html += `<tr class="pv-metric-row ${supId}-det" style="display:none">
-        <td>Sum of Link Rate</td>
-        <td class="num">${lrBadge(agRate)}</td>
-      </tr>`;
+      html += `<tr class="pv-sup-row"><td>${esc(sup)}</td><td class="num"></td></tr>`;
+      html += `<tr class="pv-sup-metric"><td>Total Closed Cases</td><td class="num">${supClosed.size.toLocaleString()}</td></tr>`;
+      html += `<tr class="pv-sup-metric"><td>Total Cases with Article</td><td class="num">${supLinked.size.toLocaleString()}</td></tr>`;
+      html += `<tr class="pv-sup-metric"><td>Overall Linked Rate</td><td class="num">${lrBadge(supRate)}</td></tr>`;
     }
   }
 
