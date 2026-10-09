@@ -3009,7 +3009,7 @@ function buildDailySnapshotTable() {
 
   if (subset.length === 0) return '<p style="color:#999;font-style:italic;">No data for the selected day.</p>';
 
-  const { managers, byMgr } = buildTeamData(subset);
+  const { supervisors } = buildTeamData(subset);
 
   // Overall totals (dedup by caseId)
   const overallClosed = new Set();
@@ -3045,18 +3045,15 @@ function buildDailySnapshotTable() {
   html += `<th style="${thNumStyle}">LR</th>`;
   html += '</tr></thead><tbody>';
 
-  for (const mgr of managers) {
-    html += `<tr><td colspan="4" style="${mgrStyle}">${esc(mgr)}</td></tr>`;
-    for (const s of byMgr[mgr]) {
-      const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
-      const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:${lrColor(rate)};background:${lrBg(rate)};">${rate.toFixed(2)}%</span>`;
-      html += '<tr>';
-      html += `<td style="${supStyle}">&nbsp;&nbsp;&bull; ${esc(s.supervisor)}</td>`;
-      html += `<td style="${numStyle}">${s.total}</td>`;
-      html += `<td style="${numStyle}">${s.linked}</td>`;
-      html += `<td style="${numStyle}">${badge}</td>`;
-      html += '</tr>';
-    }
+  for (const s of supervisors) {
+    const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
+    const badge = `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:${lrColor(rate)};background:${lrBg(rate)};">${rate.toFixed(2)}%</span>`;
+    html += '<tr>';
+    html += `<td style="${supStyle}">${esc(s.supervisor)}</td>`;
+    html += `<td style="${numStyle}">${s.total}</td>`;
+    html += `<td style="${numStyle}">${s.linked}</td>`;
+    html += `<td style="${numStyle}">${badge}</td>`;
+    html += '</tr>';
   }
 
   // Overall row
@@ -3250,15 +3247,12 @@ function buildSummarySnapshotTable() {
   const { cases, title } = getSummaryCaseSubset();
   if (cases.length === 0) return '<p style="color:#999;font-style:italic;">No summary data available.</p>';
 
-  const byMgr = {};
+  const bySup = {};
   for (const c of cases) {
-    const mgr = c.manager || 'Unknown';
-    if (!byMgr[mgr]) byMgr[mgr] = {};
-    if (!byMgr[mgr][c.supervisor]) byMgr[mgr][c.supervisor] = {};
-    const ag = c.caseOwner;
-    if (!byMgr[mgr][c.supervisor][ag]) byMgr[mgr][c.supervisor][ag] = { closed: new Set(), linked: new Set() };
-    byMgr[mgr][c.supervisor][ag].closed.add(c.caseId);
-    if (c.hasArticle) byMgr[mgr][c.supervisor][ag].linked.add(c.caseId);
+    const sup = c.supervisor || 'Unknown';
+    if (!bySup[sup]) bySup[sup] = { closed: new Set(), linked: new Set() };
+    bySup[sup].closed.add(c.caseId);
+    if (c.hasArticle) bySup[sup].linked.add(c.caseId);
   }
 
   const overallClosed = new Set();
@@ -3282,41 +3276,17 @@ function buildSummarySnapshotTable() {
   html += `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;max-width:700px;font-family:Calibri,Arial,sans-serif;border:1px solid #d0d0d0;">`;
   html += `<thead><tr><th style="${thStyle}">Label</th><th style="${thNumStyle}">Value</th></tr></thead><tbody>`;
 
-  const mgrNames = Object.keys(byMgr).sort();
-  for (const mgr of mgrNames) {
-    const mgrClosed = new Set();
-    const mgrLinked = new Set();
-    const supNames = Object.keys(byMgr[mgr]).sort();
-    for (const sup of supNames) {
-      for (const ag of Object.keys(byMgr[mgr][sup])) {
-        for (const id of byMgr[mgr][sup][ag].closed) mgrClosed.add(id);
-        for (const id of byMgr[mgr][sup][ag].linked) mgrLinked.add(id);
-      }
-    }
-    const mgrRate = mgrClosed.size > 0 ? (mgrLinked.size / mgrClosed.size * 100) : 0;
+  const supNames = Object.keys(bySup).sort();
+  for (const sup of supNames) {
+    const supClosed = bySup[sup].closed;
+    const supLinked = bySup[sup].linked;
+    const supRate = supClosed.size > 0 ? (supLinked.size / supClosed.size * 100) : 0;
 
-    // Manager header
-    html += `<tr><td colspan="2" style="padding:12px 12px 4px;font-size:12px;font-weight:700;text-transform:uppercase;color:#00144a;border:1px solid #d0d0d0;background:#f0f1f3;letter-spacing:0.3px;">${e(mgr)}</td></tr>`;
-    html += `<tr><td style="${tdStyle}padding-left:24px;">Total Closed Cases</td><td style="${tdNumStyle}">${mgrClosed.size.toLocaleString()}</td></tr>`;
-    html += `<tr><td style="${tdStyle}padding-left:24px;">Total Cases with Article</td><td style="${tdNumStyle}">${mgrLinked.size.toLocaleString()}</td></tr>`;
-    html += `<tr><td style="${tdStyle}padding-left:24px;">Overall Linked Rate</td><td style="${tdNumStyle}">${fmtLR(mgrRate)}</td></tr>`;
-
-    for (const sup of supNames) {
-      const supClosed = new Set();
-      const supLinked = new Set();
-      const agentNames = Object.keys(byMgr[mgr][sup]).sort();
-      for (const ag of agentNames) {
-        for (const id of byMgr[mgr][sup][ag].closed) supClosed.add(id);
-        for (const id of byMgr[mgr][sup][ag].linked) supLinked.add(id);
-      }
-      const supRate = supClosed.size > 0 ? (supLinked.size / supClosed.size * 100) : 0;
-
-      // Supervisor header
-      html += `<tr><td colspan="2" style="padding:10px 12px 4px 32px;font-size:12px;font-weight:600;color:#0070f2;border:1px solid #d0d0d0;">${e(sup)}</td></tr>`;
-      html += `<tr><td style="${tdStyle}padding-left:44px;">Total Closed Cases</td><td style="${tdNumStyle}">${supClosed.size.toLocaleString()}</td></tr>`;
-      html += `<tr><td style="${tdStyle}padding-left:44px;">Total Cases with Article</td><td style="${tdNumStyle}">${supLinked.size.toLocaleString()}</td></tr>`;
-      html += `<tr><td style="${tdStyle}padding-left:44px;">Overall Linked Rate</td><td style="${tdNumStyle}">${fmtLR(supRate)}</td></tr>`;
-    }
+    // Supervisor header
+    html += `<tr><td colspan="2" style="padding:10px 12px 4px;font-size:12px;font-weight:600;color:#0070f2;border:1px solid #d0d0d0;">${e(sup)}</td></tr>`;
+    html += `<tr><td style="${tdStyle}padding-left:24px;">Total Closed Cases</td><td style="${tdNumStyle}">${supClosed.size.toLocaleString()}</td></tr>`;
+    html += `<tr><td style="${tdStyle}padding-left:24px;">Total Cases with Article</td><td style="${tdNumStyle}">${supLinked.size.toLocaleString()}</td></tr>`;
+    html += `<tr><td style="${tdStyle}padding-left:24px;">Overall Linked Rate</td><td style="${tdNumStyle}">${fmtLR(supRate)}</td></tr>`;
   }
 
   // Grand totals
@@ -3463,7 +3433,15 @@ function buildTeamData(caseSubset) {
     byMgr[mgr].sort((a, b) => b.total - a.total);
   }
 
-  return { managers, byMgr };
+  // Flat supervisor list (no manager layer), sorted by total descending
+  const supervisors = Object.values(bySup).map(s => ({
+    supervisor: s.supervisor,
+    manager: s.manager,
+    total: s.closed.size,
+    linked: s.linked.size,
+  })).sort((a, b) => b.total - a.total);
+
+  return { managers, byMgr, supervisors };
 }
 
 /** Color-coded linked-rate badge */
@@ -3481,8 +3459,8 @@ function buildDailyTeamTableHTML(caseSubset) {
     return '<tr><td colspan="4" style="text-align:center; color:var(--sap-medium-gray); padding:24px;">No data available for the selected period.</td></tr>';
   }
 
-  // Group by manager > supervisor (reuse existing helper)
-  const { managers, byMgr } = buildTeamData(caseSubset);
+  // Group by supervisor (reuse existing helper, flat — no manager layer)
+  const { supervisors } = buildTeamData(caseSubset);
 
   // Also build agent-level data: supervisor > agent > {closed, linked}
   const agentBySup = {};
@@ -3506,34 +3484,31 @@ function buildDailyTeamTableHTML(caseSubset) {
   let html = '';
   let supIdx = 0;
 
-  for (const mgr of managers) {
-    html += `<tr class="mgr-row"><td colspan="4">${esc(mgr)}</td></tr>`;
-    for (const s of byMgr[mgr]) {
-      const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
-      const gid = 'dagent_' + supIdx;
-      supIdx++;
+  for (const s of supervisors) {
+    const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
+    const gid = 'dagent_' + supIdx;
+    supIdx++;
 
-      // Supervisor row — clickable to toggle agents
-      html += `<tr class="sup-row sup-toggle" onclick="toggleDailyAgents('${gid}', this)">
-        <td><span class="arrow" id="arrow_${gid}">&#9654;</span> ${esc(s.supervisor)}</td>
-        <td class="num">${s.total.toLocaleString()}</td>
-        <td class="num">${s.linked.toLocaleString()}</td>
-        <td class="num">${lrBadge(rate)}</td>
+    // Supervisor row — clickable to toggle agents
+    html += `<tr class="sup-row sup-toggle" onclick="toggleDailyAgents('${gid}', this)">
+      <td><span class="arrow" id="arrow_${gid}">&#9654;</span> ${esc(s.supervisor)}</td>
+      <td class="num">${s.total.toLocaleString()}</td>
+      <td class="num">${s.linked.toLocaleString()}</td>
+      <td class="num">${lrBadge(rate)}</td>
+    </tr>`;
+
+    // Agent rows — hidden by default
+    const agents = agentBySup[s.supervisor] || {};
+    const sortedAgents = Object.keys(agents).sort((a, b) => agents[b].closed.size - agents[a].closed.size);
+    for (const ag of sortedAgents) {
+      const a = agents[ag];
+      const aRate = a.closed.size > 0 ? (a.linked.size / a.closed.size * 100) : 0;
+      html += `<tr class="agent-row ${gid}" style="display:none;">
+        <td>${esc(ag)}</td>
+        <td class="num">${a.closed.size.toLocaleString()}</td>
+        <td class="num">${a.linked.size.toLocaleString()}</td>
+        <td class="num">${lrBadge(aRate)}</td>
       </tr>`;
-
-      // Agent rows — hidden by default
-      const agents = agentBySup[s.supervisor] || {};
-      const sortedAgents = Object.keys(agents).sort((a, b) => agents[b].closed.size - agents[a].closed.size);
-      for (const ag of sortedAgents) {
-        const a = agents[ag];
-        const aRate = a.closed.size > 0 ? (a.linked.size / a.closed.size * 100) : 0;
-        html += `<tr class="agent-row ${gid}" style="display:none;">
-          <td>${esc(ag)}</td>
-          <td class="num">${a.closed.size.toLocaleString()}</td>
-          <td class="num">${a.linked.size.toLocaleString()}</td>
-          <td class="num">${lrBadge(aRate)}</td>
-        </tr>`;
-      }
     }
   }
 
@@ -3568,7 +3543,7 @@ function buildTeamTableHTML(caseSubset) {
     return '<tr><td colspan="4" style="text-align:center; color:var(--sap-medium-gray); padding:24px;">No data available for the selected period.</td></tr>';
   }
 
-  const { managers, byMgr } = buildTeamData(caseSubset);
+  const { supervisors } = buildTeamData(caseSubset);
 
   // Overall dedup (Set-based) for the grand-total row — prevents double-counting
   // if a caseId ever appears under more than one supervisor.
@@ -3581,17 +3556,14 @@ function buildTeamTableHTML(caseSubset) {
 
   let html = '';
 
-  for (const mgr of managers) {
-    html += `<tr class="mgr-row"><td colspan="4">${esc(mgr)}</td></tr>`;
-    for (const s of byMgr[mgr]) {
-      const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
-      html += `<tr class="sup-row">
-        <td>${esc(s.supervisor)}</td>
-        <td class="num">${s.total.toLocaleString()}</td>
-        <td class="num">${s.linked.toLocaleString()}</td>
-        <td class="num">${lrBadge(rate)}</td>
-      </tr>`;
-    }
+  for (const s of supervisors) {
+    const rate = s.total > 0 ? (s.linked / s.total * 100) : 0;
+    html += `<tr class="sup-row">
+      <td>${esc(s.supervisor)}</td>
+      <td class="num">${s.total.toLocaleString()}</td>
+      <td class="num">${s.linked.toLocaleString()}</td>
+      <td class="num">${lrBadge(rate)}</td>
+    </tr>`;
   }
 
   const grandRate = overallClosed.size > 0 ? (overallLinked.size / overallClosed.size * 100) : 0;
