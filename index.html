@@ -1133,6 +1133,22 @@
         </p>
         <button class="btn-primary" onclick="loadAllData()">Refresh Data</button>
       </div>
+
+      <div id="masterDiagCard" class="card" style="margin-top:16px; display:none;">
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+          <span>Masterlist Lookup Diagnostics</span>
+          <span>
+            <span id="dsMasterStatus" style="font-size:12px; padding:3px 10px; border-radius:10px; background:#eee; margin-right:8px;"></span>
+            <button class="btn-export" onclick="downloadDiagnostics()">&#8681; Download Diagnostics</button>
+          </span>
+        </div>
+        <p style="font-size:12px; color:var(--sap-medium-gray); margin:0 0 12px 0;">
+          Shows how Case Owners were matched to the masterlist. If agents are missing, the
+          Supervisor Roster and Unmatched Case Owners lists below reveal why. Use
+          <strong>Download Diagnostics</strong> to export the full report.
+        </p>
+        <div id="masterDiagContent"></div>
+      </div>
     </div>
 
     <!-- ── CHANGELOG TAB ── -->
@@ -1160,7 +1176,7 @@ const CONFIG = {
   shareLinks: {
     closedCases: 'https://sap.sharepoint.com/:f:/s/214668/IgA6PwxM65neS47I4wCcAyvQAfLwQTpArZfa1HKPshrWH-Y?e=EFyDJ9',
     casesWithArticle: 'https://sap.sharepoint.com/:f:/s/214668/IgCbl9WO2gilRa3TOCsyJYL-AQT72Ey2crzw7XFLlm9EXjQ?e=erRiiR',
-    masterlist: 'https://sap.sharepoint.com/:l:/t/USDManagement/JABMuMfPrLOOS4QcPeJACxSMAaIeQ1_f9QxYOweuUgK8P0c?e=cewAcS',
+    masterlist: 'https://sap.sharepoint.com/:l:/s/214668/JACwYyRiRgcNRb1_v2v6eF0_Ae4SSn230f78Zkn7az_T4eM?e=EA7jht',
   },
 };
 
@@ -1401,12 +1417,18 @@ async function fetchListColumns(shareUrl) {
 async function fetchListItems(shareUrl) {
   const token = encodeSharingUrl(shareUrl);
   let items = [];
-  let url = `https://graph.microsoft.com/v1.0/shares/${token}/list/items?$expand=fields&$top=500`;
+  // $top=200 is the max page size Graph honours together with $expand=fields.
+  // Larger values can be silently capped (dropping later pages) or 400.
+  let url = `https://graph.microsoft.com/v1.0/shares/${token}/list/items?$expand=fields&$top=200`;
+  let pages = 0;
   while (url) {
     const data = await graphGet(url);
     items = items.concat(data.value || []);
     url = data['@odata.nextLink'] || null;
+    pages++;
+    if (pages > 200) { console.warn('[Masterlist] Pagination safety cap hit'); break; }
   }
+  console.log(`[Masterlist] fetchListItems: ${items.length} items over ${pages} page(s)`);
   return items;
 }
 
@@ -1435,12 +1457,16 @@ async function fetchListItemsViaIds(shareUrl) {
   }
   if (!siteId || !listId) throw new Error(`Could not resolve siteId(${siteId}) / listId(${listId})`);
   let items = [];
-  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=500`;
+  let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=200`;
+  let pages = 0;
   while (url) {
     const data = await graphGet(url);
     items = items.concat(data.value || []);
     url = data['@odata.nextLink'] || null;
+    pages++;
+    if (pages > 200) { console.warn('[Masterlist] Pagination safety cap hit (viaIds)'); break; }
   }
+  console.log(`[Masterlist] fetchListItemsViaIds: ${items.length} items over ${pages} page(s)`);
   return items;
 }
 
@@ -1661,14 +1687,19 @@ async function loadAllData() {
     let masterMap = {};
     let masterDiag = {
       strategy: '', columns: [], schemaColumns: [], sampleRow: null,
-      totalRows: 0, unmatchedOwners: [],
-      resolvedCols: { sfName: null, supervisor: null, manager: null },
+      totalRows: 0, unmatchedOwners: [], supervisorRoster: [], distinctAgents: 0,
+      resolvedCols: { sfName: null, fullName: null, supervisor: null, manager: null },
       errors: [],
     };
 
     // Display-name candidates (what the user sees in SharePoint)
-    const SF_DISPLAY  = ['SF Name', 'SF_Name', 'SFName', 'Full Name', 'FullName',
-                          'Name', 'Title', 'Employee Name', 'Employee'];
+    // Primary name column — "Employee Name" is "First [Middle] Last" format,
+    // which matches the Salesforce Case Owner format.
+    const SF_DISPLAY  = ['Employee Name', 'EmployeeName', 'Employee',
+                          'SF Name', 'SF_Name', 'SFName', 'Name', 'Title'];
+    // Secondary name column — "Full Name" is "Last, First [Middle]" format.
+    // Indexed as an additional key so case owners can match either column.
+    const FULL_DISPLAY = ['Full Name', 'FullName', 'Full_Name'];
     const SUP_DISPLAY = ['Supervisor', 'Supervisor Name', 'SupervisorName',
                           'Team Lead', 'TL', 'Sup'];
     const MGR_DISPLAY = ['Manager Section', 'Manager_Section', 'ManagerSection',
@@ -1687,22 +1718,25 @@ async function loadAllData() {
     }
 
     // ── Resolve internal column names from schema ──
-    let sfInternal = null, supInternal = null, mgrInternal = null;
+    let sfInternal = null, fullInternal = null, supInternal = null, mgrInternal = null;
 
     if (listColumns.length > 0) {
-      const sfRes  = resolveInternalName(listColumns, SF_DISPLAY);
-      const supRes = resolveInternalName(listColumns, SUP_DISPLAY);
-      const mgrRes = resolveInternalName(listColumns, MGR_DISPLAY);
+      const sfRes   = resolveInternalName(listColumns, SF_DISPLAY);
+      const fullRes = resolveInternalName(listColumns, FULL_DISPLAY);
+      const supRes  = resolveInternalName(listColumns, SUP_DISPLAY);
+      const mgrRes  = resolveInternalName(listColumns, MGR_DISPLAY);
 
-      sfInternal  = sfRes  ? sfRes.internalName  : null;
-      supInternal = supRes ? supRes.internalName : null;
-      mgrInternal = mgrRes ? mgrRes.internalName : null;
+      sfInternal   = sfRes   ? sfRes.internalName   : null;
+      fullInternal = fullRes ? fullRes.internalName : null;
+      supInternal  = supRes  ? supRes.internalName  : null;
+      mgrInternal  = mgrRes  ? mgrRes.internalName  : null;
 
-      masterDiag.resolvedCols.sfName     = sfRes  || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
-      masterDiag.resolvedCols.supervisor = supRes || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
-      masterDiag.resolvedCols.manager    = mgrRes || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
+      masterDiag.resolvedCols.sfName     = sfRes   || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
+      masterDiag.resolvedCols.fullName   = fullRes || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
+      masterDiag.resolvedCols.supervisor = supRes  || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
+      masterDiag.resolvedCols.manager    = mgrRes  || { internalName: '(not found)', displayName: '(not found)', pass: 0 };
 
-      console.log('[Masterlist] Resolved: SF Name →', sfInternal, ', Supervisor →', supInternal, ', Manager →', mgrInternal);
+      console.log('[Masterlist] Resolved: Employee Name →', sfInternal, ', Full Name →', fullInternal, ', Supervisor →', supInternal, ', Manager →', mgrInternal);
     }
 
     // ── Step 5b: Fetch list items ──
@@ -1721,7 +1755,11 @@ async function loadAllData() {
         // If schema resolution failed, try brute-force from field keys
         if (!sfInternal) {
           sfInternal = bruteForceColumn(Object.keys(sample), SF_DISPLAY);
-          if (sfInternal) console.log('[Masterlist] Brute-force SF Name →', sfInternal);
+          if (sfInternal) console.log('[Masterlist] Brute-force Employee Name →', sfInternal);
+        }
+        if (!fullInternal) {
+          fullInternal = bruteForceColumn(Object.keys(sample), FULL_DISPLAY);
+          if (fullInternal) console.log('[Masterlist] Brute-force Full Name →', fullInternal);
         }
         if (!supInternal) {
           supInternal = bruteForceColumn(Object.keys(sample), SUP_DISPLAY);
@@ -1731,26 +1769,48 @@ async function loadAllData() {
           mgrInternal = bruteForceColumn(Object.keys(sample), MGR_DISPLAY);
           if (mgrInternal) console.log('[Masterlist] Brute-force Manager →', mgrInternal);
         }
+
+        // Last-resort: if "Employee Name" could not be resolved by schema or
+        // brute-force, lock it to the FIRST readable user column (column 1).
+        if (!sfInternal) {
+          const sysRe = /^(id|contenttype|modified|created|author|editor|attachments|edit|docicon|linktitle|linktitlenomenu|itemchildcount|folderchildcount|appauthor|appeditor|owshiddenversion|guid|complianceassetid|_|odata)/i;
+          if (listColumns && listColumns.length > 0) {
+            const firstCol = listColumns.find(c => c.name && !sysRe.test(c.name));
+            if (firstCol) { sfInternal = firstCol.name; console.log('[Masterlist] Fallback Employee Name → first column', sfInternal); }
+          }
+          if (!sfInternal) {
+            const firstKey = Object.keys(sample).find(k => !sysRe.test(k) && k !== '@odata.etag');
+            if (firstKey) { sfInternal = firstKey; console.log('[Masterlist] Fallback Employee Name → first field key', sfInternal); }
+          }
+        }
       }
 
       for (const item of items) {
         const f = item.fields || {};
 
         // Extract values using resolved internal names
-        const sfRaw  = sfInternal  ? f[sfInternal]  : null;
-        const supRaw = supInternal ? f[supInternal] : null;
-        const mgrRaw = mgrInternal ? f[mgrInternal] : null;
+        const sfRaw   = sfInternal   ? f[sfInternal]   : null;
+        const fullRaw = fullInternal ? f[fullInternal] : null;
+        const supRaw  = supInternal  ? f[supInternal]  : null;
+        const mgrRaw  = mgrInternal  ? f[mgrInternal]  : null;
 
         const sfName     = unwrapFieldValue(sfRaw);
+        const fullName   = unwrapFieldValue(fullRaw);
         const supervisor = unwrapFieldValue(supRaw);
         const manager    = unwrapFieldValue(mgrRaw);
 
+        // Map the Case Owner against the "Employee Name" column (column 1) as
+        // the authoritative key. "Full Name" is only used as a safety net when
+        // a row has no Employee Name, so no masterlist row is ever lost.
+        const entry = {
+          supervisor: supervisor || 'Unknown',
+          manager:    manager    || 'Unknown',
+          sfNameRaw:  sfName || fullName,
+        };
         if (sfName) {
-          map[normalizeName(sfName)] = {
-            supervisor: supervisor || 'Unknown',
-            manager:    manager    || 'Unknown',
-            sfNameRaw:  sfName,
-          };
+          map[normalizeName(sfName)] = entry;
+        } else if (fullName) {
+          map[normalizeName(fullName)] = entry;
         }
       }
       console.log(`[Masterlist] Built ${Object.keys(map).length} entries from ${items.length} rows. Strategy: ${strategyLabel}`);
@@ -1789,6 +1849,39 @@ async function loadAllData() {
     }
 
     const masterCount = Object.keys(masterMap).length;
+
+    // ── Diagnostic: supervisor roster from the parsed masterlist ──
+    // Counts DISTINCT agents (by raw name) under each supervisor so we can see
+    // whether the masterlist actually contains more than a handful of teams,
+    // and how many agents collapse to an unreadable/blank ("Unknown") supervisor.
+    {
+      const rosterSeen = new Set();
+      const roster = {};
+      for (const entry of Object.values(masterMap)) {
+        const agentKey = (entry.sfNameRaw || '').toLowerCase().trim();
+        if (!agentKey || rosterSeen.has(agentKey)) continue;
+        rosterSeen.add(agentKey);
+        const sup = (entry.supervisor && entry.supervisor !== '') ? entry.supervisor : 'Unknown';
+        roster[sup] = (roster[sup] || 0) + 1;
+      }
+      masterDiag.supervisorRoster = Object.entries(roster)
+        .map(([sup, count]) => ({ sup, count }))
+        .sort((a, b) => b.count - a.count);
+      masterDiag.distinctAgents = rosterSeen.size;
+      // Capture a sample of parsed agent→supervisor rows for the export
+      const sampleNames = [];
+      const sampleSeen = new Set();
+      for (const entry of Object.values(masterMap)) {
+        const k = (entry.sfNameRaw || '').toLowerCase().trim();
+        if (!k || sampleSeen.has(k)) continue;
+        sampleSeen.add(k);
+        sampleNames.push({ name: entry.sfNameRaw, supervisor: entry.supervisor, manager: entry.manager });
+        if (sampleNames.length >= 40) break;
+      }
+      masterDiag.sampleNames = sampleNames;
+      console.log('[Masterlist] Supervisor roster:', masterDiag.supervisorRoster);
+    }
+
     const elMaster = document.getElementById('dsMasterStatus');
     if (elMaster) { elMaster.textContent = masterCount > 0 ? `${masterCount} entries` : 'No data'; elMaster.style.background = masterCount > 0 ? '#e6f4ea' : '#fde8e8'; }
     setStep(5, 'done');
@@ -1956,14 +2049,21 @@ function parseMasterlistExcel(arrayBuffer) {
   for (const sheetName of wb.SheetNames) {
     const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
     for (const row of json) {
-      const sfName = findField(row, ['SF Name', 'SFName', 'SF_Name', 'Title', 'FullName', 'Name', 'Employee Name', 'Employee']);
+      const sfName = findField(row, ['Employee Name', 'Employee', 'SF Name', 'SFName', 'SF_Name', 'Title', 'Name']);
+      const fullName = findField(row, ['Full Name', 'FullName', 'Full_Name']);
       const supervisor = findField(row, ['Supervisor', 'Supervisor Name', 'SupervisorName']);
       const manager = findField(row, ['Manager Section', 'ManagerSection', 'Manager_Section', 'Manager']);
-      if (sfName) {
-        map[normalizeName(sfName)] = {
+      if (sfName || fullName) {
+        const entry = {
           supervisor: supervisor || 'Unknown',
           manager: manager || 'Unknown',
+          sfNameRaw: sfName || fullName,
         };
+        if (sfName) {
+          map[normalizeName(sfName)] = entry;
+        } else if (fullName) {
+          map[normalizeName(fullName)] = entry;
+        }
       }
     }
   }
@@ -2104,52 +2204,73 @@ function findField(obj, candidates) {
 }
 
 function normalizeName(name) {
-  return String(name).trim().toLowerCase().replace(/\s+/g, ' ');
+  let s = String(name).trim().toLowerCase();
+  // Punctuation (commas, periods) → spaces so "Rizon, Charm" tokenises cleanly
+  s = s.replace(/[.,]/g, ' ');
+  // Collapse whitespace
+  s = s.replace(/\s+/g, ' ').trim();
+  // Drop generational suffixes that appear as standalone tokens
+  s = s.replace(/\b(jr|sr|ii|iii|iv)\b/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+function nameTokens(normName) {
+  return normName.split(' ').filter(Boolean);
 }
 
 /**
- * Multi-strategy masterlist lookup.
- * 1. Exact normalised match   → "john doe" === "john doe"
- * 2. Reversed name order      → "doe, john" → "john doe"
- * 3. Last-name first swap     → "doe john" vs "john doe"
- * 4. Partial / contains match → either name contains the other (for middle-name differences)
+ * Multi-strategy masterlist lookup. Case Owner names are matched against the
+ * masterlist, which is indexed under BOTH the "Employee Name" (First Last) and
+ * "Full Name" (Last, First) columns. All names are normalised (punctuation and
+ * generational suffixes stripped) before comparison.
+ *
+ * 1. Exact normalised match        → "john doe" === "john doe"
+ * 2. Two-part reversed swap         → "doe john" → "john doe"
+ * 3. Whole-name containment         → one name fully contained in the other
+ * 4. First+Last token-set match     → first & last name tokens both present,
+ *                                      order-independent, tolerant of middle
+ *                                      names and reversed order
  * Returns the matched entry or null.
  */
 function lookupMaster(caseOwner, masterMap) {
   if (!caseOwner || caseOwner === 'Unknown') return null;
   const norm = normalizeName(caseOwner);
+  if (!norm) return null;
 
   // Strategy 1 — exact normalised match
   if (masterMap[norm]) return masterMap[norm];
 
-  // Strategy 2 — handle "Last, First" or "Last,First"
-  if (norm.includes(',')) {
-    const reversed = norm.split(',').map(s => s.trim()).reverse().join(' ');
-    if (masterMap[reversed]) return masterMap[reversed];
-  }
+  const parts = nameTokens(norm);
 
-  // Strategy 3 — try swapping two-part names ("doe john" → "john doe")
-  const parts = norm.split(' ');
+  // Strategy 2 — two-part reversed swap ("doe john" → "john doe")
   if (parts.length === 2) {
     const swapped = parts[1] + ' ' + parts[0];
     if (masterMap[swapped]) return masterMap[swapped];
   }
 
-  // Strategy 4 — partial / contains (handles middle names, suffixes, etc.)
+  // Strategy 3 — whole-name containment (bounded by spaces to avoid
+  // matching "al" inside "alex"). Handles extra middle names.
+  const padNorm = ' ' + norm + ' ';
   for (const [key, entry] of Object.entries(masterMap)) {
-    if (key.includes(norm) || norm.includes(key)) return entry;
+    const padKey = ' ' + key + ' ';
+    if (padKey.includes(padNorm) || padNorm.includes(padKey)) return entry;
   }
 
-  // Strategy 5 — fuzzy first+last match (first and last tokens match)
+  // Strategy 4 — first+last token-set match (order independent).
+  // Matches if the owner's first AND last tokens both appear anywhere in the
+  // key's tokens, OR vice-versa. Catches "Jose Reyes" ⇄ "Reyes, Jose Delos
+  // Santos" and "Rizon, Charm" ⇄ "Charm Rizon".
   if (parts.length >= 2) {
-    const first = parts[0], last = parts[parts.length - 1];
+    const oFirst = parts[0], oLast = parts[parts.length - 1];
+    const oSet = new Set(parts);
     for (const [key, entry] of Object.entries(masterMap)) {
-      const kParts = key.split(' ');
-      if (kParts.length >= 2) {
-        const kFirst = kParts[0], kLast = kParts[kParts.length - 1];
-        if (first === kFirst && last === kLast) return entry;
-        if (first === kLast && last === kFirst) return entry;   // reversed order
-      }
+      const kParts = nameTokens(key);
+      if (kParts.length < 2) continue;
+      const kSet = new Set(kParts);
+      if (kSet.has(oFirst) && kSet.has(oLast)) return entry;
+      const kFirst = kParts[0], kLast = kParts[kParts.length - 1];
+      if (oSet.has(kFirst) && oSet.has(kLast)) return entry;
     }
   }
 
@@ -4237,7 +4358,8 @@ function renderMasterDiag(diag) {
     html += '<p style="font-size:13px; margin-bottom:4px;"><strong>Resolved column mapping:</strong></p>';
     html += '<table class="data-table" style="margin-bottom:12px; font-size:12px;"><thead><tr><th>Target Field</th><th>Resolved Internal Name</th><th>Method</th><th>Sample Value</th></tr></thead><tbody>';
     const pairs = [
-      ['SF Name (Case Owner)', diag.resolvedCols.sfName],
+      ['Employee Name (Case Owner)', diag.resolvedCols.sfName],
+      ['Full Name (alt match)', diag.resolvedCols.fullName],
       ['Supervisor', diag.resolvedCols.supervisor],
       ['Manager Section', diag.resolvedCols.manager],
     ];
@@ -4261,6 +4383,24 @@ function renderMasterDiag(diag) {
   // Match rate
   html += `<p style="font-size:13px; margin-bottom:8px;"><strong>Case owner match rate:</strong> ${matched} / ${totalOwners} unique owners (<strong>${matchRate}%</strong>)</p>`;
 
+  // Supervisor roster parsed FROM the masterlist (not from matched cases).
+  // Reveals whether the masterlist genuinely contains many teams or only a few,
+  // and how many agents fall under a blank/unreadable ("Unknown") supervisor.
+  if (diag.supervisorRoster && diag.supervisorRoster.length > 0) {
+    const unknownRow = diag.supervisorRoster.find(r => r.sup === 'Unknown');
+    const unknownNote = unknownRow
+      ? ` — <span style="color:var(--sap-error); font-weight:700;">${unknownRow.count} agents have a blank/unreadable Supervisor</span>`
+      : '';
+    html += `<details open style="margin-top:12px;"><summary style="cursor:pointer; font-size:13px; font-weight:700;">Masterlist Supervisor Roster — ${diag.supervisorRoster.length} distinct supervisors, ${diag.distinctAgents || 0} agents${unknownNote}</summary>`;
+    html += '<div class="table-wrap" style="max-height:320px; overflow-y:auto; margin-top:8px;">';
+    html += '<table class="data-table" style="font-size:12px;"><thead><tr><th>#</th><th>Supervisor (as parsed from masterlist)</th><th>Agents</th></tr></thead><tbody>';
+    diag.supervisorRoster.forEach((r, i) => {
+      const warn = r.sup === 'Unknown' ? 'color:var(--sap-error); font-weight:700;' : '';
+      html += `<tr><td>${i + 1}</td><td style="${warn}">${esc(r.sup)}</td><td>${r.count}</td></tr>`;
+    });
+    html += '</tbody></table></div></details>';
+  }
+
   // Unmatched owners
   if (diag.unmatchedOwners.length > 0) {
     html += `<details style="margin-top:12px;"><summary style="cursor:pointer; font-size:13px; font-weight:700; color:var(--sap-error);">${diag.unmatchedOwners.length} Unmatched Case Owners</summary>`;
@@ -4276,6 +4416,59 @@ function renderMasterDiag(diag) {
 
   container.innerHTML = html;
   card.style.display = 'block';
+  // Expose for the Download Diagnostics button
+  window.__lastDiag = diag;
+  const statusEl = document.getElementById('dsMasterStatus');
+  if (statusEl) {
+    statusEl.textContent = `${matchRate}% matched`;
+    statusEl.style.background = parseFloat(matchRate) >= 90 ? '#e6f4ea' : (parseFloat(matchRate) >= 50 ? '#fef7e0' : '#fde8e8');
+  }
+}
+
+/** Export the full masterlist diagnostics to a downloadable text file. */
+function downloadDiagnostics() {
+  const d = window.__lastDiag;
+  if (!d) { showToast('No diagnostics available yet. Load data first.'); return; }
+  const lines = [];
+  lines.push('LINKED RATE PORTAL — MASTERLIST DIAGNOSTICS');
+  lines.push('Generated: ' + new Date().toISOString());
+  lines.push('='.repeat(60));
+  lines.push('');
+  lines.push('Load strategy: ' + (d.strategy || ''));
+  lines.push('Masterlist rows loaded: ' + (d.totalRows || 0));
+  lines.push('Distinct agents parsed: ' + (d.distinctAgents || 0));
+  lines.push('');
+  lines.push('RESOLVED COLUMN MAPPING');
+  lines.push('-'.repeat(60));
+  if (d.resolvedCols) {
+    for (const [label, key] of [['Employee Name', 'sfName'], ['Full Name', 'fullName'], ['Supervisor', 'supervisor'], ['Manager Section', 'manager']]) {
+      const info = d.resolvedCols[key];
+      lines.push(`${label}: ${info ? info.key || info.internalName : '(not found)'}  | sample: ${info ? JSON.stringify(info.sampleValue) : ''}`);
+    }
+  }
+  lines.push('');
+  lines.push('SUPERVISOR ROSTER (from masterlist)');
+  lines.push('-'.repeat(60));
+  (d.supervisorRoster || []).forEach((r, i) => lines.push(`${i + 1}. ${r.sup} — ${r.count} agents`));
+  lines.push('');
+  lines.push('SAMPLE PARSED AGENTS (first 40)');
+  lines.push('-'.repeat(60));
+  (d.sampleNames || []).forEach((s, i) => lines.push(`${i + 1}. "${s.name}" | sup="${s.supervisor}" | mgr="${s.manager}"`));
+  lines.push('');
+  lines.push('UNMATCHED CASE OWNERS (' + (d.unmatchedOwners ? d.unmatchedOwners.length : 0) + ')');
+  lines.push('-'.repeat(60));
+  (d.unmatchedOwners || []).slice().sort().forEach((n, i) => lines.push(`${i + 1}. ${n}`));
+  lines.push('');
+  lines.push('RAW FIELD KEYS (first item): ' + (d.columns || []).join(', '));
+  lines.push('ERRORS: ' + (d.errors || []).join(' | '));
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `linked_rate_diagnostics_${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 // ╔══════════════════════════════════════════════════════════════╗
